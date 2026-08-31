@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fi-agent"
+version = "0.1.0"
+description = "Multi-agent stock watchlist monitor running on a local Qwen LLM"
+requires-python = ">=3.13"
+dynamic = ["dependencies"]
+
+[project.scripts]
+fi-agent = "fi_agent.cli:app"
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+fi_agent = ["report/templates/*.j2"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.13"
+packages = ["fi_agent"]
+mypy_path = "src"
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = ["live: hits the real Ollama server and live market data"]

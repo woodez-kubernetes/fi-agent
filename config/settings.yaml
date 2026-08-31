@@ -1,0 +1,40 @@
+# fi-agent settings. Copy to config/local.yaml to override without touching git.
+
+llm:
+  base_url: "http://192.168.2.167:11434"
+  model: "qwen2.5:7b"
+  # Ollama defaults num_ctx to 4096, which silently truncates article text.
+  # Must be set explicitly. qwen2.5:7b supports 32768.
+  num_ctx: 16384
+  temperature: 0.0
+  request_timeout_s: 180
+  max_retries: 2
+
+screening:
+  move_threshold_pct: 3.0      # |% change vs previous close|
+  volume_multiple: 2.0         # volume / 30d average volume
+  gap_pct: 2.0                 # |open vs previous close|
+  idio_threshold_pct: 2.0      # |beta-adjusted residual vs SPY|
+  flag_52w_extremes: true
+  benchmark: "SPY"
+  beta_lookback_days: 60
+
+news:
+  lookback_hours: 36
+  max_headlines_per_ticker: 15
+  max_articles_per_ticker: 4
+  fetch_concurrency: 8
+  article_char_limit: 2500
+  fuzzy_title_threshold: 88
+  http_timeout_s: 20
+  user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+
+run:
+  # Wall-clock budget for the whole run. Movers not analysed by the deadline
+  # render as data-only cards rather than blocking the report.
+  budget_seconds: 900
+  max_movers: 8
+
+paths:
+  reports_dir: "reports"
+  database: "data/fi_agent.db"

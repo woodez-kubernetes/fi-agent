@@ -1,0 +1,31 @@
+# fi-agent runtime dependencies
+# Install only inside the project virtual environment (.venv), see CLAUDE.md.
+
+# Agent orchestration
+langgraph
+langchain-core
+langchain-ollama
+
+# Config & validation
+pydantic
+pydantic-settings
+pyyaml
+
+# Market data
+yfinance
+pandas
+numpy
+
+# News gathering
+feedparser
+trafilatura
+httpx
+rapidfuzz
+python-dateutil
+
+# Reporting
+jinja2
+
+# CLI
+typer
+rich

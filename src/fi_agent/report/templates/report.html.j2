@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Watchlist report — {{ generated_at.strftime('%d %b %Y %H:%M UTC') }}</title>
+<style>
+  :root {
+    --bg: #fbfbfa; --panel: #ffffff; --border: #e3e2df; --text: #1f1e1c;
+    --muted: #6c6a65; --faint: #93908a; --accent: #3f5efb;
+    --up: #12855c; --up-bg: #e7f5ef; --down: #c2331f; --down-bg: #fdecea;
+    --chip: #f0efec;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #171716; --panel: #1e1e1d; --border: #333331; --text: #eceae5;
+      --muted: #a4a19a; --faint: #78756f; --accent: #8ba0ff;
+      --up: #4ec08d; --up-bg: #14301f; --down: #f0705a; --down-bg: #351a17;
+      --chip: #2a2a28;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2.5rem 1.25rem 4rem; background: var(--bg); color: var(--text);
+    font: 15px/1.6 ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; }
+  header { border-bottom: 1px solid var(--border); padding-bottom: 1.25rem; margin-bottom: 1.75rem; }
+  h1 { font-size: 1.6rem; margin: 0 0 .35rem; letter-spacing: -.02em; }
+  .sub { color: var(--muted); font-size: .875rem; }
+  .sub b { color: var(--text); font-weight: 600; }
+  h2 {
+    font-size: .78rem; text-transform: uppercase; letter-spacing: .09em;
+    color: var(--faint); margin: 2.25rem 0 .85rem; font-weight: 600;
+  }
+  .summary {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 1.15rem 1.25rem;
+  }
+  .summary p { margin: 0 0 .75rem; }
+  .summary p:last-child { margin-bottom: 0; }
+  .themes { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .9rem; }
+  .theme {
+    background: var(--chip); border-radius: 999px; padding: .18rem .6rem;
+    font-size: .78rem; color: var(--muted);
+  }
+  table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+  .scroll { overflow-x: auto; }
+  th {
+    text-align: right; font-weight: 600; color: var(--faint); font-size: .72rem;
+    text-transform: uppercase; letter-spacing: .06em; padding: 0 .55rem .5rem;
+    border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  th:first-child, td:first-child { text-align: left; padding-left: 0; }
+  th:last-child, td:last-child { padding-right: 0; }
+  td { text-align: right; padding: .55rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  tbody tr:last-child td { border-bottom: none; }
+  .sym { font-weight: 600; }
+  .co { color: var(--muted); font-weight: 400; margin-left: .4rem; font-size: .82rem; }
+  .up { color: var(--up); } .down { color: var(--down); }
+  .num { font-variant-numeric: tabular-nums; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 1.15rem 1.25rem; margin-bottom: 1rem;
+  }
+  .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
+  .card-head h3 { margin: 0; font-size: 1.05rem; }
+  .move { font-size: 1.05rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .price { color: var(--muted); font-size: .8rem; font-weight: 400; display: block; text-align: right; }
+  .spark { display: block; margin: .5rem 0 .25rem; }
+  .lede { font-size: 1rem; font-weight: 550; margin: .85rem 0 .5rem; }
+  .narrative { margin: 0 0 .9rem; }
+  .triggers { display: flex; flex-wrap: wrap; gap: .35rem; margin: .6rem 0 0; }
+  .trigger {
+    font-size: .74rem; color: var(--muted); background: var(--chip);
+    border-radius: 5px; padding: .15rem .5rem;
+  }
+  .meta { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: .75rem; }
+  .chip {
+    font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; font-weight: 600;
+    border-radius: 5px; padding: .18rem .5rem; background: var(--chip); color: var(--muted);
+  }
+  .chip.high { background: var(--up-bg); color: var(--up); }
+  .chip.low { background: var(--down-bg); color: var(--down); }
+  ul.evidence { list-style: none; margin: 0; padding: 0; }
+  ul.evidence li {
+    padding: .5rem 0 .5rem .85rem; border-left: 2px solid var(--border);
+    margin-bottom: .5rem; font-size: .9rem;
+  }
+  ul.evidence li:last-child { margin-bottom: 0; }
+  .cite { display: block; margin-top: .25rem; font-size: .78rem; color: var(--faint); }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .watch { font-size: .85rem; color: var(--muted); margin: .9rem 0 0; padding-top: .75rem;
+           border-top: 1px dashed var(--border); }
+  .watch b { color: var(--text); font-weight: 600; }
+  .note { color: var(--muted); font-size: .875rem; }
+  .warn {
+    background: var(--down-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: .7rem .9rem; font-size: .84rem; margin-bottom: 1rem;
+  }
+  footer {
+    margin-top: 3rem; padding-top: 1.25rem; border-top: 1px solid var(--border);
+    color: var(--faint); font-size: .78rem;
+  }
+  footer code { font-size: .95em; }
+  .disclaimer { margin-top: .6rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Watchlist report</h1>
+  <div class="sub">
+    {{ generated_at.strftime('%A %d %B %Y, %H:%M UTC') }}
+    &middot; {{ context.benchmark }}
+    <b class="{{ 'up' if context.benchmark_pct >= 0 else 'down' }}">{{ '%+.2f'|format(context.benchmark_pct) }}%</b>
+    &middot; {{ findings|length }} of {{ findings|length + quiet|length }} names flagged
+    &middot; market {{ 'open' if market_open else 'closed' }}
+  </div>
+</header>
+
+{% if errors %}
+<div class="warn">
+  <b>{{ errors|length }} issue{{ '' if errors|length == 1 else 's' }} during this run:</b>
+  {{ errors|join('; ') }}
+</div>
+{% endif %}
+
+<section class="summary">
+  <p>{{ summary.summary }}</p>
+  {% if summary.themes %}
+  <div class="themes">
+    {% for theme in summary.themes %}<span class="theme">{{ theme }}</span>{% endfor %}
+  </div>
+  {% endif %}
+</section>
+
+{% if findings %}
+<h2>Movers</h2>
+<div class="scroll">
+<table>
+  <thead>
+    <tr>
+      <th>Ticker</th><th>Last</th><th>Change</th><th>Vs {{ context.benchmark }}</th>
+      <th>Sector</th><th>Volume</th><th>Driver</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for f in findings %}
+    {% set q = f.mover.quote %}
+    <tr>
+      <td><span class="sym">{{ f.mover.symbol }}</span><span class="co">{{ f.mover.name }}</span></td>
+      <td class="num">{{ '%.2f'|format(q.price) }}</td>
+      <td class="num {{ 'up' if q.pct_change >= 0 else 'down' }}">{{ '%+.2f'|format(q.pct_change) }}%</td>
+      <td class="num {{ 'up' if (f.mover.residual_pct or 0) >= 0 else 'down' }}">
+        {{ '%+.2f'|format(f.mover.residual_pct) ~ '%' if f.mover.residual_pct is not none else '—' }}
+      </td>
+      <td class="num">
+        {% if f.mover.sector_etf and f.mover.sector_pct is not none %}
+          {{ f.mover.sector_etf }} <span class="{{ 'up' if f.mover.sector_pct >= 0 else 'down' }}">{{ '%+.2f'|format(f.mover.sector_pct) }}%</span>
+        {% else %}—{% endif %}
+      </td>
+      <td class="num">{{ '%.1fx'|format(q.volume_ratio) if q.volume_ratio else '—' }}</td>
+      <td>{{ f.analysis.driver|replace('_', ' ') if f.analysis else 'no analysis' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<h2>What moved and why</h2>
+{% for f in findings %}
+  {% set q = f.mover.quote %}
+  <article class="card">
+    <div class="card-head">
+      <div>
+        <h3>{{ f.mover.symbol }} <span class="co">{{ f.mover.name }}</span></h3>
+        {{ f.sparkline|safe }}
+      </div>
+      <div>
+        <span class="move {{ 'up' if q.pct_change >= 0 else 'down' }}">{{ '%+.2f'|format(q.pct_change) }}%</span>
+        <span class="price">{{ '%.2f'|format(q.price) }} {{ q.currency }}</span>
+      </div>
+    </div>
+
+    {% if f.analysis %}
+      <div class="lede">{{ f.analysis.headline }}</div>
+      <div class="meta">
+        <span class="chip">{{ f.analysis.driver|replace('_', ' ') }}</span>
+        <span class="chip {{ f.analysis.confidence }}">{{ f.analysis.confidence }} confidence</span>
+        {% if f.dropped_claims %}
+          <span class="chip low">{{ f.dropped_claims|length }} claim{{ '' if f.dropped_claims|length == 1 else 's' }} struck</span>
+        {% endif %}
+      </div>
+      <p class="narrative">{{ f.analysis.narrative }}</p>
+
+      {% if f.cited %}
+      <ul class="evidence">
+        {% for claim, article in f.cited %}
+        <li>
+          {{ claim }}
+          <span class="cite">
+            <a href="{{ article.url }}" rel="noopener noreferrer" target="_blank">{{ article.title }}</a>
+            — {{ article.source }}{% if article.published_at %}, {{ article.published_at.strftime('%d %b %H:%M UTC') }}{% endif %}
+            {%- if not article.text %} (headline only){% endif %}
+          </span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="note">No citation survived verification for this move.</p>
+      {% endif %}
+
+      {% if f.analysis.watch_next %}
+      <p class="watch"><b>What would confirm this:</b> {{ f.analysis.watch_next }}</p>
+      {% endif %}
+    {% else %}
+      <p class="note">
+        Narrative analysis unavailable{% if f.degraded_reason %} — {{ f.degraded_reason }}{% endif %}.
+        {% if f.articles %}Recent headlines:{% endif %}
+      </p>
+      {% if f.articles %}
+      <ul class="evidence">
+        {% for article in f.articles[:4] %}
+        <li><a href="{{ article.url }}" rel="noopener noreferrer" target="_blank">{{ article.title }}</a>
+          <span class="cite">{{ article.source }}{% if article.published_at %}, {{ article.published_at.strftime('%d %b %H:%M UTC') }}{% endif %}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    {% endif %}
+
+    {% if f.mover.triggers %}
+    <div class="triggers">
+      {% for t in f.mover.triggers %}<span class="trigger">{{ t }}</span>{% endfor %}
+    </div>
+    {% endif %}
+  </article>
+{% endfor %}
+{% else %}
+<h2>Movers</h2>
+<p class="note">No watchlist name cleared the screening thresholds this run.</p>
+{% endif %}
+
+{% if quiet %}
+<h2>Rest of the watchlist</h2>
+<div class="scroll">
+<table>
+  <thead><tr><th>Ticker</th><th>Last</th><th>Change</th><th>Vs {{ context.benchmark }}</th><th>Volume</th></tr></thead>
+  <tbody>
+  {% for m in quiet %}
+    <tr>
+      <td><span class="sym">{{ m.symbol }}</span><span class="co">{{ m.name }}</span></td>
+      <td class="num">{{ '%.2f'|format(m.quote.price) }}</td>
+      <td class="num {{ 'up' if m.quote.pct_change >= 0 else 'down' }}">{{ '%+.2f'|format(m.quote.pct_change) }}%</td>
+      <td class="num">{{ '%+.2f'|format(m.residual_pct) ~ '%' if m.residual_pct is not none else '—' }}</td>
+      <td class="num">{{ '%.1fx'|format(m.quote.volume_ratio) if m.quote.volume_ratio else '—' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+
+<footer>
+  Run <code>{{ run_id }}</code> &middot; {{ diagnostics.duration_s }}s
+  &middot; model <code>{{ diagnostics.model }}</code> at <code>{{ diagnostics.base_url }}</code>
+  &middot; {{ diagnostics.llm_calls }} LLM call{{ '' if diagnostics.llm_calls == 1 else 's' }}
+  ({{ diagnostics.llm_seconds }}s)
+  {%- if diagnostics.degraded %} &middot; degraded: {{ diagnostics.degraded|join(', ') }}{% endif %}
+  <div class="disclaimer">
+    Prices and percentages are computed from market data, not generated by the language model.
+    Narrative text is model-written and may be wrong. This is a news monitoring tool, not
+    investment advice.
+  </div>
+</footer>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,42 @@
+# Watchlist. Edit freely - `fi-agent watchlist add/remove` also maintains this file.
+#
+#   symbol            required, the ticker
+#   name              company name, used to build news queries
+#   sector_etf        optional, compared against to separate sector moves from company moves
+#   move_threshold_pct  optional per-ticker override of screening.move_threshold_pct
+#                       (raise it for high-beta names that move 3% on a quiet day)
+
+tickers:
+  - symbol: NVDA
+    name: NVIDIA
+    sector_etf: SMH
+    move_threshold_pct: 4.5
+  - symbol: AAPL
+    name: Apple
+    sector_etf: XLK
+  - symbol: MSFT
+    name: Microsoft
+    sector_etf: XLK
+  - symbol: GOOGL
+    name: Alphabet
+    sector_etf: XLC
+  - symbol: AMZN
+    name: Amazon
+    sector_etf: XLY
+  - symbol: META
+    name: Meta Platforms
+    sector_etf: XLC
+  - symbol: TSLA
+    name: Tesla
+    sector_etf: XLY
+    move_threshold_pct: 5.0
+  - symbol: AMD
+    name: Advanced Micro Devices
+    sector_etf: SMH
+    move_threshold_pct: 4.5
+  - symbol: JPM
+    name: JPMorgan Chase
+    sector_etf: XLF
+  - symbol: XOM
+    name: Exxon Mobil
+    sector_etf: XLE

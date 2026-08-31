@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# fi-agent
+reports/
+data/
+config/local.yaml
+logs/

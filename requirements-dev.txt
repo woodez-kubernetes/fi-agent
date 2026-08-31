@@ -1,0 +1,9 @@
+# fi-agent development dependencies
+-r requirements.txt
+
+pytest
+pytest-asyncio
+respx
+ruff
+mypy
+types-PyYAML

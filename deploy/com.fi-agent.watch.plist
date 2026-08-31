@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.fi-agent.watch</string>
+
+    <!-- Runs `fi-agent watch` every 30 minutes. The agent skips cycles when the
+         market is closed, so this is safe to leave running around the clock. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/kwood/projects/coding-repos/fi-agent/.venv/bin/fi-agent</string>
+        <string>watch</string>
+        <string>--interval</string>
+        <string>30</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/kwood/projects/coding-repos/fi-agent</string>
+
+    <!-- Start when you log in, and restart if it ever exits. -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- If it crashes on startup, wait a minute before retrying rather than
+         spinning in a restart loop. -->
+    <key>ThrottleInterval</key>
+    <integer>60</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/kwood/projects/coding-repos/fi-agent/logs/fi-agent.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/kwood/projects/coding-repos/fi-agent/logs/fi-agent.err.log</string>
+
+    <!-- Low priority; this is a background job, not something you are waiting on. -->
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>
