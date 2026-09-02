@@ -95,7 +95,106 @@ uses no LLM at all:
 
 ---
 
-## Part 3 — Keep it running
+## Part 3 — Email alerts (optional)
+
+Get the report emailed to you when something new starts moving.
+
+**The rule:** it emails when a ticker flags that was *not* flagged in the previous run.
+If NVDA stays flagged all afternoon you get one email, not one every 30 minutes.
+
+### Step 1 — Create a Gmail App Password
+
+Your normal Google password will not work; Gmail requires an App Password for SMTP.
+
+1. Turn on 2-Step Verification at <https://myaccount.google.com/security> if it isn't on.
+2. Go to <https://myaccount.google.com/apppasswords>.
+3. Create one named `fi-agent`.
+4. Google shows a 16-character password. Copy it.
+
+### Step 2 — Put it in a .env file
+
+```bash
+cp /Users/kwood/projects/coding-repos/fi-agent/.env.example /Users/kwood/projects/coding-repos/fi-agent/.env
+```
+
+Open `.env` and paste the 16 characters after the `=`, with no spaces or quotes:
+
+```
+FI_AGENT_SMTP_PASSWORD=abcdefghijklmnop
+```
+
+`.env` is gitignored, so it will never be committed. Nothing else in the project stores
+this value and it is never written to the logs.
+
+### Step 3 — Turn email on
+
+In `config/settings.yaml`, change `enabled` to `true`:
+
+```yaml
+email:
+  enabled: true
+  to: ["kevin.wood75@gmail.com"]
+  from_address: "kevin.wood75@gmail.com"
+```
+
+### Step 4 — Send yourself a test
+
+First check the connection with a one-line message:
+
+```bash
+.venv/bin/fi-agent email-test
+```
+
+If it arrives, SMTP works. If it fails, the error says what to fix — the usual cause is
+using the account password instead of an App Password.
+
+Then email yourself a real report:
+
+```bash
+.venv/bin/fi-agent run --force-email
+```
+
+`--force-email` sends whatever this run flags, ignoring the newly-flagged rule. Without
+it a test run usually sends nothing, because the same names were already flagged last
+time — which is the rule working correctly, but makes for a confusing test.
+
+Confirm the configuration is seen:
+
+```bash
+.venv/bin/fi-agent doctor
+```
+
+The `Email` row should read `to kevin.wood75@gmail.com via smtp.gmail.com`.
+
+### Controlling it per run
+
+Force an email for one run, ignoring the config:
+
+```bash
+.venv/bin/fi-agent run --email
+```
+
+Suppress it for one run:
+
+```bash
+.venv/bin/fi-agent run --no-email
+```
+
+Email the current picture on demand, whether or not anything is newly flagged:
+
+```bash
+.venv/bin/fi-agent run --force-email
+```
+
+### A note on how the email looks
+
+The body is the full report. **Gmail strips SVG**, so the sparklines will not appear in
+the email — everything else does. To also receive the file itself, which opens with the
+sparklines intact, set `attach_report: true` in `config/settings.yaml`.
+
+---
+
+## Part 4 — Keep it running
 
 This installs a **LaunchAgent**: macOS starts the agent when you log in, restarts it if
 it ever dies, and keeps it running in the background. You do not need a terminal open.
@@ -134,7 +233,7 @@ code — `0` is healthy.
 
 ---
 
-## Part 4 — Day-to-day control
+## Part 5 — Day-to-day control
 
 ### Watch it work
 
@@ -170,7 +269,7 @@ launchctl unload ~/Library/LaunchAgents/com.fi-agent.watch.plist && rm ~/Library
 
 ---
 
-## Part 5 — Where the reports go
+## Part 6 — Where the reports go
 
 Every run writes a timestamped folder under `reports/`:
 
@@ -195,7 +294,7 @@ points at the newest report, so one click gives you the current picture.
 
 ---
 
-## Part 6 — Changing what it watches
+## Part 7 — Changing what it watches
 
 ### Add or remove a ticker
 
@@ -222,13 +321,14 @@ cp /Users/kwood/projects/coding-repos/fi-agent/deploy/com.fi-agent.watch.plist ~
 
 ### Change thresholds or the Ollama address
 
-Edit `config/settings.yaml`, then restart the agent (see Part 4). The most likely edits:
+Edit `config/settings.yaml`, then restart the agent (see Part 5). The most likely edits:
 
 | Setting | Meaning |
 |---|---|
 | `llm.base_url` | Address of the Ollama machine |
 | `screening.move_threshold_pct` | How big a move must be to get investigated (default 3%) |
 | `screening.idio_threshold_pct` | How much unexplained move triggers a look (default 2%) |
+| `screening.volume_multiple` | How much heavier than normal volume must be to flag (default 2x) |
 | `news.lookback_hours` | How far back to search for news (default 36) |
 
 Changes take effect on the next cycle after a restart.
@@ -244,6 +344,10 @@ Changes take effect on the next cycle after a restart.
 | No new reports appearing | The Mac slept, or the market is closed | Check `logs/fi-agent.log`; "Market closed, skipping this cycle" is normal and expected outside 09:30–16:00 ET on weekdays |
 | `429 Too Many Requests` in the log | Yahoo is rate-limiting the RSS feed | Harmless. Google News and yfinance cover it; the report still gets its news |
 | Reports say "no identified catalyst" a lot | Working as designed | The agent refuses to assert a cause it cannot cite. Outside market hours there is often genuinely no fresh news |
+| No emails arriving | Nothing *newly* flagged | By design it only mails when a name flags that wasn't flagged last run. The run output says `no newly flagged tickers since the last run`. Use `fi-agent run --force-email` to send anyway |
+| Email says `FI_AGENT_SMTP_PASSWORD is not set` | No `.env`, or the variable is blank | See Part 3, Step 2 |
+| Email says SMTP rejected the login | Using the Google account password | It must be a 16-character App Password. See Part 3, Step 1 |
+| Sparklines missing from the email | Gmail strips SVG | Expected. Set `attach_report: true` and open the attachment |
 | Everything looks broken | — | Run `.venv/bin/fi-agent doctor` first; it isolates which layer failed |
 
 ### Nothing is working and I want to start over
@@ -270,4 +374,4 @@ cd /Users/kwood/projects/coding-repos/fi-agent && .venv/bin/fi-agent watch --int
 ```
 
 Press `Ctrl-C` to stop. It stops when you close the window or the Mac sleeps, which is
-why the LaunchAgent in Part 3 is the better option for leaving it running.
+why the LaunchAgent in Part 4 is the better option for leaving it running.

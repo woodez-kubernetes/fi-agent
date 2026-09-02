@@ -14,6 +14,7 @@ from rich.console import Console
 from rich.logging import RichHandler
 from rich.table import Table
 
+from fi_agent import notify
 from fi_agent import publish as publish_mod
 from fi_agent.agents.graph import Deps, run_pipeline
 from fi_agent.config import (
@@ -63,12 +64,32 @@ def run(
     open_browser: Annotated[
         bool, typer.Option("--open", help="Open the report when it is written")
     ] = False,
+    email: Annotated[
+        bool | None,
+        typer.Option(
+            "--email/--no-email",
+            help="Override config: enable or suppress the email for this run",
+        ),
+    ] = None,
+    force_email: Annotated[
+        bool,
+        typer.Option(
+            "--force-email",
+            help="Email whatever this run flags, ignoring the newly-flagged rule",
+        ),
+    ] = False,
     verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
 ) -> None:
     """Fetch, screen, investigate and publish a watchlist report."""
     _configure_logging(verbose)
     settings = load_settings()
     watchlist = load_watchlist()
+
+    if email is not None:
+        settings.email.enabled = email
+    # Asking to force an email plainly means wanting one, so it implies --email.
+    if force_email and email is None:
+        settings.email.enabled = True
 
     if tickers:
         wanted = {t.strip().upper() for t in tickers.split(",") if t.strip()}
@@ -124,6 +145,10 @@ def run(
             degraded=[f.mover.symbol for f in findings if f.degraded],
         )
 
+        # Which names were flagged last time must be read before this run is recorded.
+        previously = store.previously_flagged(run_id)
+        flagged_symbols = [f.mover.symbol for f in findings]
+
         paths = publish_mod.publish(
             reports_dir=reports_dir,
             run_id=run_id,
@@ -136,12 +161,25 @@ def run(
             generated_at=generated_at,
             open_browser=open_browser,
         )
+        store.save_flagged(run_id, flagged_symbols)
         store.finish_run(run_id, len(findings), "ok", str(paths["dir"]))
 
-    _print_summary(findings, quiet, context, diagnostics, paths["html"])
+        mail = notify.maybe_send_report(
+            settings=settings.email,
+            findings=findings,
+            flagged=flagged_symbols,
+            previously_flagged=previously,
+            html=paths["html"].read_text(encoding="utf-8"),
+            report_path=paths["html"],
+            force=force_email,
+        )
+
+    _print_summary(findings, quiet, context, diagnostics, paths["html"], mail)
 
 
-def _print_summary(findings, quiet, context, diagnostics, html_path: Path) -> None:
+def _print_summary(
+    findings, quiet, context, diagnostics, html_path: Path, mail=None
+) -> None:
     table = Table(title=None, box=None, pad_edge=False, header_style="dim")
     table.add_column("Ticker")
     table.add_column("Change", justify="right")
@@ -171,6 +209,11 @@ def _print_summary(findings, quiet, context, diagnostics, html_path: Path) -> No
         f"{diagnostics.duration_s}s total"
     )
     console.print(f"[bold]Report:[/] {html_path}")
+    if mail is not None:
+        if mail.sent:
+            console.print(f"[green]Email:[/] {mail.detail}")
+        elif mail.detail not in {"email disabled", "nothing flagged"}:
+            console.print(f"[dim]Email:[/] {mail.detail}")
 
 
 @app.command()
@@ -198,6 +241,48 @@ def replay(
 
     paths = publish_mod.rerender(state_path, open_browser=open_browser)
     console.print(f"[bold]Re-rendered:[/] {paths['html']}")
+
+
+@app.command("email-test")
+def email_test(
+    verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
+) -> None:
+    """Send one test email, to check the SMTP settings work.
+
+    This actually delivers a message to the configured recipients.
+    """
+    _configure_logging(verbose)
+    settings = load_settings()
+
+    if not settings.email.is_configured:
+        console.print(
+            "[red]Email is not configured.[/] Set email.enabled, email.to and "
+            "email.from_address in config/settings.yaml."
+        )
+        raise typer.Exit(1)
+    if notify.load_password() is None:
+        console.print(
+            f"[red]{notify.PASSWORD_ENV} is not set.[/] Put it in a .env file at the "
+            "project root. See deploy-run.md."
+        )
+        raise typer.Exit(1)
+
+    recipients = ", ".join(settings.email.to)
+    console.print(f"Sending a test message to [bold]{recipients}[/]...")
+
+    message = notify.build_message(
+        settings.email,
+        "[fi-agent] test message",
+        "<p>fi-agent SMTP is working. This is a test message.</p>",
+        "fi-agent SMTP is working. This is a test message.",
+    )
+    result = notify.send(settings.email, message)
+
+    if result.sent:
+        console.print(f"[green]Sent.[/] {result.detail}")
+    else:
+        console.print(f"[red]Failed.[/] {result.detail}")
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -254,6 +339,24 @@ def doctor(verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False) ->
     checks.append(
         ("Watchlist", bool(watchlist.tickers), f"{len(watchlist.tickers)} tickers")
     )
+
+    # Reports configuration only - this never contacts the mail server and never sends.
+    if not settings.email.enabled:
+        checks.append(("Email", True, "disabled"))
+    elif not settings.email.is_configured:
+        checks.append(("Email", False, "enabled but 'to' or 'from_address' is unset"))
+    elif notify.load_password() is None:
+        checks.append(("Email", False, f"{notify.PASSWORD_ENV} not set (see deploy-run.md)"))
+    else:
+        checks.append(
+            (
+                "Email",
+                True,
+                f"to {', '.join(settings.email.to)} via {settings.email.smtp_host} "
+                f"(run 'fi-agent email-test' to verify delivery)",
+            )
+        )
+
     checks.append(("Market session", True, "open" if market_is_open() else "closed"))
 
     table = Table(box=None, pad_edge=False, header_style="dim")
@@ -290,7 +393,14 @@ def watch(
                 console.print("[dim]Market closed, skipping this cycle.[/]")
             else:
                 try:
-                    run(tickers=None, no_llm=False, open_browser=False, verbose=verbose)
+                    run(
+                        tickers=None,
+                        no_llm=False,
+                        open_browser=False,
+                        email=None,
+                        force_email=False,
+                        verbose=verbose,
+                    )
                 except Exception as exc:
                     console.print(f"[red]Run failed:[/] {exc}")
             time.sleep(interval * 60)

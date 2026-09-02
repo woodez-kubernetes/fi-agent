@@ -55,6 +55,14 @@ nothing. The residual answers "did this move for reasons of its own?" In a live 
 flagged GOOGL on a +1.74% day, which no 3% threshold would have caught, because +2.04%
 of that move was unexplained by SPY.
 
+Volume gets similar treatment. Intraday volume is U-shaped — heavy at the open and
+close, quiet at midday — so comparing the morning's volume against a linear share of the
+30-day average makes every stock look busy. Twenty-five minutes into a live session that
+put 8 of 10 watchlist names above their average and tripped the 2x trigger on two of
+them, both spuriously. Expected volume now follows a U-shaped curve
+(`screening.intraday_volume_curve`), and the trigger is suppressed entirely for the first
+15 minutes, where the opening auction defeats any smooth model.
+
 ## Setup
 
 ```bash
@@ -94,7 +102,9 @@ Other commands:
 | `fi-agent run -t NVDA,AMD` | Restrict to specific tickers, on or off the watchlist |
 | `fi-agent replay latest` | Re-render a stored run with current templates, **zero LLM calls** |
 | `fi-agent watch -i 30` | Run every 30 minutes during market hours |
-| `fi-agent doctor` | Check Ollama, market data, news feeds, venv |
+| `fi-agent doctor` | Check Ollama, market data, news feeds, email config, venv |
+| `fi-agent email-test` | Send one test email to verify SMTP |
+| `fi-agent run --force-email` | Email the current picture, ignoring the newly-flagged rule |
 | `fi-agent watchlist list/add/remove` | Manage `config/watchlist.yaml` |
 
 `replay` is the one to know about: it rebuilds the report from the saved `state.json`, so
@@ -113,6 +123,17 @@ Each run writes `reports/YYYY-MM-DD_HHMMSS/`:
 | `llm_trace.jsonl` | Per-call latency and token counts |
 
 `reports/latest.html` points at the most recent run.
+
+### Email
+
+Set `email.enabled: true` in `config/settings.yaml` and the report is emailed when a
+ticker flags that was **not** flagged in the previous run — so a name that stays flagged
+all afternoon produces one message, not one per cycle.
+
+The SMTP password is never stored in config. It is read from `FI_AGENT_SMTP_PASSWORD`,
+in practice from a gitignored `.env`. Setup steps are in
+[deploy-run.md](deploy-run.md#part-3--email-alerts-optional); `fi-agent email-test`
+verifies it.
 
 ## Configuration
 

@@ -13,11 +13,17 @@ its own?", which is the question the report exists to answer.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 import pandas as pd
 
 from fi_agent.config import ScreeningSettings, Watchlist
-from fi_agent.data.market import compute_beta, market_is_open, session_fraction
+from fi_agent.data.market import (
+    compute_beta,
+    intraday_volume_fraction,
+    market_is_open,
+    volume_estimate_is_reliable,
+)
 from fi_agent.schemas import MarketContext, Mover, Quote
 
 log = logging.getLogger(__name__)
@@ -49,15 +55,20 @@ def residual_pct(quote: Quote, beta: float | None, benchmark_pct: float) -> floa
     return round(quote.pct_change - beta * benchmark_pct, 3)
 
 
-def effective_volume_ratio(quote: Quote) -> float | None:
-    """Volume ratio, prorated for how much of the session has elapsed.
+def effective_volume_ratio(
+    quote: Quote, curve: float = 0.7, now: datetime | None = None
+) -> float | None:
+    """Volume so far against what would be normal by this point in the session.
 
-    Comparing 10:00am volume against a full-day average would make every intraday run
-    look quiet, so the average is scaled to the fraction of the session so far.
+    The expected share comes from a U-shaped intraday curve rather than from clock time,
+    because volume clusters at the open and close. Scaling by clock time instead made
+    ordinary mornings look like volume spikes - at 4.9% into a session it put 8 of 10
+    watchlist names above their 30-day average and tripped the trigger on two of them.
     """
     if not quote.volume or not quote.avg_volume_30d:
         return None
-    expected = quote.avg_volume_30d * (session_fraction() if market_is_open() else 1.0)
+    expected_share = intraday_volume_fraction(now, curve) if market_is_open(now) else 1.0
+    expected = quote.avg_volume_30d * expected_share
     if expected <= 0:
         return None
     return round(quote.volume / expected, 3)
@@ -70,6 +81,7 @@ def screen(
     settings: ScreeningSettings,
     frame: pd.DataFrame | None = None,
     max_movers: int = 8,
+    now: datetime | None = None,
 ) -> tuple[list[Mover], list[Mover]]:
     """Split the watchlist into (movers, quiet).
 
@@ -78,6 +90,12 @@ def screen(
     """
     movers: list[Mover] = []
     quiet: list[Mover] = []
+
+    # Volume is still shown during the opening minutes, but it must not flag anything:
+    # the opening auction prints in a burst no smooth curve models well.
+    volume_trusted = volume_estimate_is_reliable(now, settings.volume_warmup_minutes)
+    if not volume_trusted:
+        log.info("within the opening warmup, volume triggers suppressed")
 
     for ticker in watchlist.tickers:
         quote = quotes.get(ticker.symbol)
@@ -91,13 +109,13 @@ def screen(
             else None
         )
         residual = residual_pct(quote, beta, context.benchmark_pct)
-        vol_ratio = effective_volume_ratio(quote)
+        vol_ratio = effective_volume_ratio(quote, settings.intraday_volume_curve, now)
         threshold = ticker.move_threshold_pct or settings.move_threshold_pct
 
         triggers: list[str] = []
         if abs(quote.pct_change) >= threshold:
             triggers.append(f"moved {quote.pct_change:+.2f}% (threshold {threshold:.1f}%)")
-        if vol_ratio is not None and vol_ratio >= settings.volume_multiple:
+        if volume_trusted and vol_ratio is not None and vol_ratio >= settings.volume_multiple:
             triggers.append(f"volume {vol_ratio:.1f}x average")
         gap = quote.gap_pct
         if gap is not None and abs(gap) >= settings.gap_pct:

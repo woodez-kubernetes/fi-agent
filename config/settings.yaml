@@ -18,6 +18,14 @@ screening:
   flag_52w_extremes: true
   benchmark: "SPY"
   beta_lookback_days: 60
+  # Intraday volume is U-shaped: heavy at the open and close, quiet at midday. Comparing
+  # against clock time instead made ordinary mornings look like volume spikes.
+  # 0.0 = volume assumed spread evenly across the session (the old behaviour)
+  # 0.7 = default, expects ~13% of the day's volume in the first 30 minutes
+  # 1.0 = most pronounced U
+  intraday_volume_curve: 0.7
+  # Minutes after the opening bell during which volume cannot flag a ticker on its own.
+  volume_warmup_minutes: 15
 
 news:
   lookback_hours: 36
@@ -34,6 +42,23 @@ run:
   # render as data-only cards rather than blocking the report.
   budget_seconds: 900
   max_movers: 8
+
+email:
+  # Emails the report when a ticker flags that was NOT flagged in the previous run.
+  # A name that stays flagged all afternoon produces one email, not one per cycle.
+  enabled: true 
+  to: ["kevin.wood75@gmail.com"]
+  from_address: "kevin.wood75@gmail.com"
+  smtp_host: "smtp.gmail.com"
+  smtp_port: 587
+  use_tls: true
+  # Also attach report.html. The inline body loses its sparklines because Gmail strips
+  # SVG; the attachment opens with everything intact.
+  attach_report: true
+  #
+  # The password is NOT set here. Put a Gmail App Password in a .env file at the
+  # project root:   FI_AGENT_SMTP_PASSWORD=your16charapppassword
+  # .env is gitignored. See deploy-run.md for how to create the App Password.
 
 paths:
   reports_dir: "reports"

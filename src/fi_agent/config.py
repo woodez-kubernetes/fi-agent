@@ -31,6 +31,12 @@ class ScreeningSettings(BaseModel):
     flag_52w_extremes: bool = True
     benchmark: str = "SPY"
     beta_lookback_days: int = 60
+    # Shape of the intraday volume curve. 0 = volume assumed spread evenly across the
+    # session, 1 = most pronounced U. Higher values expect more volume near the open
+    # and close, which stops morning runs flagging everything on volume.
+    intraday_volume_curve: float = Field(default=0.7, ge=0.0, le=1.0)
+    # Minutes after the open during which volume is too erratic to judge.
+    volume_warmup_minutes: float = Field(default=15.0, ge=0.0)
 
 
 class NewsSettings(BaseModel):
@@ -52,6 +58,28 @@ class RunSettings(BaseModel):
     max_movers: int = 8
 
 
+class EmailSettings(BaseModel):
+    """Delivery of the report by email.
+
+    The SMTP password is deliberately absent. It is read at send time from the
+    FI_AGENT_SMTP_PASSWORD environment variable (or a gitignored .env file), so no
+    credential is ever written into a config file that could be committed.
+    """
+
+    enabled: bool = False
+    to: list[str] = Field(default_factory=list)
+    from_address: str = ""
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    use_tls: bool = True
+    attach_report: bool = False
+    timeout_s: int = 30
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.enabled and self.to and self.from_address and self.smtp_host)
+
+
 class PathSettings(BaseModel):
     reports_dir: str = "reports"
     database: str = "data/fi_agent.db"
@@ -62,6 +90,7 @@ class Settings(BaseModel):
     screening: ScreeningSettings = Field(default_factory=ScreeningSettings)
     news: NewsSettings = Field(default_factory=NewsSettings)
     run: RunSettings = Field(default_factory=RunSettings)
+    email: EmailSettings = Field(default_factory=EmailSettings)
     paths: PathSettings = Field(default_factory=PathSettings)
 
     @property

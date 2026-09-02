@@ -26,6 +26,10 @@ python-dateutil
 # Reporting
 jinja2
 
+# Email delivery. certifi is explicit rather than transitive: Python from python.org
+# ships an empty CA trust store, so SMTP over TLS depends on this bundle being present.
+certifi
+
 # CLI
 typer
 rich

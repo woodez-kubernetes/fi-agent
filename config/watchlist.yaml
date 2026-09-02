@@ -10,33 +10,34 @@ tickers:
   - symbol: NVDA
     name: NVIDIA
     sector_etf: SMH
-    move_threshold_pct: 4.5
-  - symbol: AAPL
-    name: Apple
-    sector_etf: XLK
+    move_threshold_pct: 2.0
+  - symbol: SPCX
+    name: SPACEX
+    move_threshold_pct: 3.5
   - symbol: MSFT
     name: Microsoft
-    sector_etf: XLK
-  - symbol: GOOGL
-    name: Alphabet
-    sector_etf: XLC
+    move_threshold_pct: 1.7
+  - symbol: AFRM
+    name: Affirm Holdings
+    move_threshold_pct: 6.5
   - symbol: AMZN
     name: Amazon
-    sector_etf: XLY
-  - symbol: META
-    name: Meta Platforms
-    sector_etf: XLC
+    move_threshold_pct: 5.0
+  - symbol: BE
+    name: Bloom Energy
+    move_threshold_pct: 15.0
   - symbol: TSLA
     name: Tesla
-    sector_etf: XLY
     move_threshold_pct: 5.0
-  - symbol: AMD
-    name: Advanced Micro Devices
-    sector_etf: SMH
-    move_threshold_pct: 4.5
-  - symbol: JPM
-    name: JPMorgan Chase
-    sector_etf: XLF
-  - symbol: XOM
-    name: Exxon Mobil
-    sector_etf: XLE
+  - symbol: VST
+    name: Vistra
+    move_threshold_pct: 8.0
+  - symbol: PLTR
+    name: Palantir Technologies 
+    move_threshold_pct: 5.0
+  - symbol: XYZ
+    name: Block
+    move_threshold_pct: 5.0
+  - symbol: QQC.TO
+    name: CI Invesco NASDAQ 100
+    move_threshold_pct: 1.0
