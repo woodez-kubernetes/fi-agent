@@ -219,6 +219,6 @@ __marimo__/
 
 # fi-agent
 reports/
-data/
+/data/
 config/local.yaml
 logs/
