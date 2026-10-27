@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 from datetime import UTC, datetime, timedelta
 from urllib.parse import quote_plus, urlparse, urlunparse
 
@@ -110,18 +111,31 @@ def parse_feed(content: bytes, fallback_source: str) -> list[Article]:
     return articles
 
 
-async def _get(client: httpx.AsyncClient, url: str, attempts: int = 3) -> bytes | None:
+class RateLimited(Exception):
+    """The source answered 429 on every attempt."""
+
+
+async def _get(
+    client: httpx.AsyncClient, url: str, attempts: int = 3, raise_on_rate_limit: bool = False
+) -> bytes | None:
     """GET with backoff. Yahoo's RSS endpoint rate-limits aggressively and returns 429
     for a burst of ticker requests, so a retry is the difference between having the
-    source and not."""
+    source and not.
+
+    With `raise_on_rate_limit`, a 429 that survives every retry raises RateLimited
+    instead of logging, so the caller can stop asking for a while.
+    """
     delay = 1.0
     for attempt in range(attempts):
         try:
             response = await client.get(url)
-            if response.status_code == 429 and attempt < attempts - 1:
-                await asyncio.sleep(delay)
-                delay *= 2
-                continue
+            if response.status_code == 429:
+                if attempt < attempts - 1:
+                    await asyncio.sleep(delay)
+                    delay *= 2
+                    continue
+                if raise_on_rate_limit:
+                    raise RateLimited(url)
             response.raise_for_status()
             return response.content
         except (httpx.HTTPError, httpx.InvalidURL) as exc:
@@ -131,6 +145,45 @@ async def _get(client: httpx.AsyncClient, url: str, attempts: int = 3) -> bytes 
             await asyncio.sleep(delay)
             delay *= 2
     return None
+
+
+# Yahoo sometimes blocks the RSS endpoint outright for an IP, answering 429 to even a
+# single request for hours. Retrying every ticker every cycle then only adds seconds and
+# a page of warnings, so after a persistent 429 the source is skipped for a cool-down.
+# Module state is deliberate: `fi-agent watch` is one long-lived process, so the pause
+# carries across cycles and lapses on its own if the block lifts.
+YAHOO_COOLDOWN_S = 60 * 60
+_yahoo_paused_until = 0.0
+
+
+def _clock() -> float:
+    return time.monotonic()
+
+
+def yahoo_paused() -> bool:
+    return _clock() < _yahoo_paused_until
+
+
+def _pause_yahoo() -> None:
+    global _yahoo_paused_until
+    # Concurrent tickers hit the block together; only the first one reports it.
+    already = yahoo_paused()
+    _yahoo_paused_until = _clock() + YAHOO_COOLDOWN_S
+    if not already:
+        log.warning(
+            "Yahoo RSS is rate-limiting; skipping it for %d min (Google News still used)",
+            YAHOO_COOLDOWN_S // 60,
+        )
+
+
+async def _get_yahoo(client: httpx.AsyncClient, url: str) -> bytes | None:
+    if yahoo_paused():
+        return None
+    try:
+        return await _get(client, url, raise_on_rate_limit=True)
+    except RateLimited:
+        _pause_yahoo()
+        return None
 
 
 def _yfinance_news(symbol: str) -> list[Article]:
@@ -263,19 +316,19 @@ async def gather_headlines(
 ) -> list[Article]:
     """Collect, filter and dedupe headlines for one ticker."""
     query = quote_plus(f"{company_name or symbol} stock")
-    urls = [
-        (YAHOO_RSS.format(symbol=symbol), "Yahoo Finance"),
-        (GOOGLE_RSS.format(query=query), "Google News"),
-    ]
+    sources = ["Yahoo Finance", "Google News"]
 
     headers = {"User-Agent": settings.user_agent}
     async with httpx.AsyncClient(
         timeout=settings.http_timeout_s, headers=headers, follow_redirects=True
     ) as client:
-        payloads = await asyncio.gather(*(_get(client, url) for url, _ in urls))
+        payloads = await asyncio.gather(
+            _get_yahoo(client, YAHOO_RSS.format(symbol=symbol)),
+            _get(client, GOOGLE_RSS.format(query=query)),
+        )
 
     collected: list[Article] = []
-    for payload, (_, source) in zip(payloads, urls, strict=True):
+    for payload, source in zip(payloads, sources, strict=True):
         if payload:
             collected.extend(parse_feed(payload, source))
 
