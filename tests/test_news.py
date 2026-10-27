@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 
+import httpx
+import pytest
+
+from fi_agent.config import NewsSettings
+from fi_agent.data import news
 from fi_agent.data.news import (
     _needles,
     canonical_url,
@@ -117,3 +123,84 @@ def test_deduplicate_catches_syndicated_rewrites():
 def test_article_body_falls_back_to_summary():
     assert Article(url="u", title="t", summary="s").body == "s"
     assert Article(url="u", title="t", summary="s", text="full").body == "full"
+
+
+# --------------------------------------------------------------------------------------
+# Yahoo rate-limit cool-down. HTTP is served by httpx.MockTransport; nothing goes out.
+# --------------------------------------------------------------------------------------
+
+class FakeFeeds:
+    """Yahoo answers 429 while `yahoo_blocked`; Google always serves FEED."""
+
+    def __init__(self) -> None:
+        self.yahoo_blocked = True
+        self.hits = {"yahoo": 0, "google": 0}
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        if "yahoo" in request.url.host:
+            self.hits["yahoo"] += 1
+            if self.yahoo_blocked:
+                return httpx.Response(429, text="Too Many Requests")
+            return httpx.Response(200, content=FEED)
+        self.hits["google"] += 1
+        return httpx.Response(200, content=FEED)
+
+
+@pytest.fixture
+def feeds(monkeypatch):
+    fake = FakeFeeds()
+    real_client = httpx.AsyncClient
+    clock = {"now": 1000.0}
+
+    async def no_sleep(_s):
+        return None
+
+    monkeypatch.setattr(
+        news.httpx,
+        "AsyncClient",
+        lambda **kw: real_client(transport=httpx.MockTransport(fake.handler), **kw),
+    )
+    monkeypatch.setattr(news.asyncio, "sleep", no_sleep)
+    monkeypatch.setattr(news, "_yfinance_news", lambda _symbol: [])
+    monkeypatch.setattr(news, "_clock", lambda: clock["now"])
+    monkeypatch.setattr(news, "_yahoo_paused_until", 0.0)
+    fake.clock = clock
+    return fake
+
+
+async def _gather():
+    return await news.gather_headlines("NVDA", "Nvidia", NewsSettings(), now=NOW)
+
+
+async def test_persistent_429_pauses_yahoo_and_keeps_google(feeds, caplog):
+    articles = await _gather()
+
+    assert feeds.hits["yahoo"] == 3  # the normal retries, once
+    assert news.yahoo_paused()
+    assert any(a.source == "Reuters" for a in articles), "Google News still used"
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert warnings == [
+        "Yahoo RSS is rate-limiting; skipping it for 60 min (Google News still used)"
+    ]
+
+
+async def test_paused_yahoo_is_not_requested(feeds):
+    await _gather()
+    await _gather()
+    assert feeds.hits["yahoo"] == 3
+    assert feeds.hits["google"] == 2
+
+
+async def test_yahoo_is_retried_after_cool_down(feeds):
+    await _gather()
+    feeds.yahoo_blocked = False
+    feeds.clock["now"] += news.YAHOO_COOLDOWN_S + 1
+    await _gather()
+    assert feeds.hits["yahoo"] == 4
+    assert not news.yahoo_paused()
+
+
+async def test_concurrent_tickers_report_the_block_once(feeds, caplog):
+    await asyncio.gather(*(_gather() for _ in range(5)))
+    pauses = [r for r in caplog.records if "Yahoo RSS is rate-limiting" in r.getMessage()]
+    assert len(pauses) == 1

@@ -1,12 +1,16 @@
 # fi-agent settings. Copy to config/local.yaml to override without touching git.
 
 llm:
-  base_url: "http://192.168.2.167:11434"
-  model: "qwen2.5:7b"
+  base_url: "http://192.168.2.182:11434"
+  model: "qwen3:8b"
   # Ollama defaults num_ctx to 4096, which silently truncates article text.
   # Must be set explicitly. qwen2.5:7b supports 32768.
   num_ctx: 16384
   temperature: 0.0
+  # qwen3 "thinks" before answering unless told not to. Ollama enables it by default,
+  # and with it on a triage call took 2+ minutes and routinely hit the timeout below.
+  # Off is ~20x faster; set true only with a much larger request_timeout_s.
+  think: false
   request_timeout_s: 180
   max_retries: 2
 
@@ -59,6 +63,24 @@ email:
   # The password is NOT set here. Put a Gmail App Password in a .env file at the
   # project root:   FI_AGENT_SMTP_PASSWORD=your16charapppassword
   # .env is gitignored. See deploy-run.md for how to create the App Password.
+
+notion:
+  # Publishes the report to a Notion database: one row per trading day (New York time),
+  # rewritten in place by each later run that day so its URL stays the same.
+  enabled: true
+  # Skip runs where nothing cleared screening.
+  only_when_flagged: true
+  title_prefix: "Watchlist"          # row title becomes "Watchlist · 2026-10-09"
+  # Columns to fill. Any the database lacks (or has with another type) are skipped.
+  date_property: "Report date"
+  model_property: "Model"
+  category_property: "Category"
+  category: "Watchlist"
+  #
+  # Credentials are NOT set here. Put them in .env at the project root:
+  #   NOTION_TOKEN=ntn_...           the integration's internal secret
+  #   NOTION_PARENT_PAGE=https://www.notion.so/...   the database link
+  # The database must be shared with the integration (••• menu → Connections).
 
 paths:
   reports_dir: "reports"

@@ -74,6 +74,19 @@ def test_num_ctx_is_always_sent(client, monkeypatch):
     assert seen["format"], "generation must be schema-constrained"
 
 
+def test_think_is_always_sent(client, monkeypatch):
+    """Ollama enables thinking by default for qwen3; it must be off unless configured."""
+    seen = {}
+
+    def capture(**kwargs):
+        seen.update(kwargs)
+        return response('{"selected": [], "no_material_news": true}')
+
+    monkeypatch.setattr(client._client, "chat", capture)
+    client.structured(TriageResult, "sys", "user")
+    assert seen["think"] is False
+
+
 def test_invalid_json_is_retried_with_the_error(client, monkeypatch):
     attempts = []
 

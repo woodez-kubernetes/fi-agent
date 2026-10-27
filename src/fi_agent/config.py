@@ -19,6 +19,9 @@ class LLMSettings(BaseModel):
     model: str = "qwen2.5:7b"
     num_ctx: int = 16384
     temperature: float = 0.0
+    # Hidden reasoning before each answer, for models that support it (qwen3). Ollama
+    # turns it on by default; off is roughly 20x faster at a small cost in judgement.
+    think: bool = False
     request_timeout_s: int = 180
     max_retries: int = 2
 
@@ -80,6 +83,24 @@ class EmailSettings(BaseModel):
         return bool(self.enabled and self.to and self.from_address and self.smtp_host)
 
 
+class NotionSettings(BaseModel):
+    """Publishing the report to a Notion database, one row per trading day.
+
+    The integration token and database link are deliberately absent. They are read at
+    publish time from NOTION_TOKEN and NOTION_PARENT_PAGE (or a gitignored .env file).
+    Column names are only written when the database has a column of that name and a
+    compatible type.
+    """
+
+    enabled: bool = False
+    only_when_flagged: bool = True
+    title_prefix: str = "Watchlist"
+    date_property: str = "Report date"
+    model_property: str = "Model"
+    category_property: str = "Category"
+    category: str = "Watchlist"
+
+
 class PathSettings(BaseModel):
     reports_dir: str = "reports"
     database: str = "data/fi_agent.db"
@@ -91,6 +112,7 @@ class Settings(BaseModel):
     news: NewsSettings = Field(default_factory=NewsSettings)
     run: RunSettings = Field(default_factory=RunSettings)
     email: EmailSettings = Field(default_factory=EmailSettings)
+    notion: NotionSettings = Field(default_factory=NotionSettings)
     paths: PathSettings = Field(default_factory=PathSettings)
 
     @property
