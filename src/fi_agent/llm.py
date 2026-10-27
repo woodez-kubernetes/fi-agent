@@ -5,6 +5,8 @@ Everything the agents send goes through `structured()`, which:
 * pins `num_ctx` explicitly - Ollama defaults to 4096, which would silently truncate
   article text and yield confident nonsense with no error anywhere,
 * constrains generation with the Pydantic model's JSON schema via Ollama's `format`,
+* sends `think` explicitly - Ollama enables hidden reasoning by default for models such
+  as qwen3, which made each call ~20x slower and pushed calls past the timeout,
 * validates the result and, on failure, retries with the validation error fed back,
 * gives up gracefully rather than raising, so one malformed response degrades a single
   ticker instead of aborting the report,
@@ -114,6 +116,7 @@ class LLMClient:
                     model=self.settings.model,
                     messages=messages,
                     format=json_schema,
+                    think=self.settings.think,
                     options={
                         "num_ctx": self.settings.num_ctx,
                         "temperature": self.settings.temperature,

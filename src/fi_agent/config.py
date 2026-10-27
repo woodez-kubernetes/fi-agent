@@ -19,6 +19,9 @@ class LLMSettings(BaseModel):
     model: str = "qwen2.5:7b"
     num_ctx: int = 16384
     temperature: float = 0.0
+    # Hidden reasoning before each answer, for models that support it (qwen3). Ollama
+    # turns it on by default; off is roughly 20x faster at a small cost in judgement.
+    think: bool = False
     request_timeout_s: int = 180
     max_retries: int = 2
 

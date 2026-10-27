@@ -1,12 +1,16 @@
 # fi-agent settings. Copy to config/local.yaml to override without touching git.
 
 llm:
-  base_url: "http://192.168.2.167:11434"
-  model: "qwen2.5:7b"
+  base_url: "http://192.168.2.182:11434"
+  model: "qwen3:8b"
   # Ollama defaults num_ctx to 4096, which silently truncates article text.
   # Must be set explicitly. qwen2.5:7b supports 32768.
   num_ctx: 16384
   temperature: 0.0
+  # qwen3 "thinks" before answering unless told not to. Ollama enables it by default,
+  # and with it on a triage call took 2+ minutes and routinely hit the timeout below.
+  # Off is ~20x faster; set true only with a much larger request_timeout_s.
+  think: false
   request_timeout_s: 180
   max_retries: 2
 
