@@ -15,6 +15,7 @@ from rich.logging import RichHandler
 from rich.table import Table
 
 from fi_agent import notify
+from fi_agent import notion as notion_mod
 from fi_agent import publish as publish_mod
 from fi_agent.agents.graph import Deps, run_pipeline
 from fi_agent.config import (
@@ -78,6 +79,13 @@ def run(
             help="Email whatever this run flags, ignoring the newly-flagged rule",
         ),
     ] = False,
+    notion: Annotated[
+        bool | None,
+        typer.Option(
+            "--notion/--no-notion",
+            help="Override config: enable or suppress publishing to Notion for this run",
+        ),
+    ] = None,
     verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
 ) -> None:
     """Fetch, screen, investigate and publish a watchlist report."""
@@ -85,6 +93,8 @@ def run(
     settings = load_settings()
     watchlist = load_watchlist()
 
+    if notion is not None:
+        settings.notion.enabled = notion
     if email is not None:
         settings.email.enabled = email
     # Asking to force an email plainly means wanting one, so it implies --email.
@@ -149,17 +159,18 @@ def run(
         previously = store.previously_flagged(run_id)
         flagged_symbols = [f.mover.symbol for f in findings]
 
+        report_state = {
+            "run_id": run_id,
+            "findings": findings,
+            "quiet": quiet,
+            "context": context,
+            "summary": state["summary"],
+            "errors": errors,
+            "diagnostics": diagnostics,
+            "generated_at": generated_at,
+        }
         paths = publish_mod.publish(
-            reports_dir=reports_dir,
-            run_id=run_id,
-            findings=findings,
-            quiet=quiet,
-            context=context,
-            summary=state["summary"],
-            errors=errors,
-            diagnostics=diagnostics,
-            generated_at=generated_at,
-            open_browser=open_browser,
+            reports_dir=reports_dir, open_browser=open_browser, **report_state
         )
         store.save_flagged(run_id, flagged_symbols)
         store.finish_run(run_id, len(findings), "ok", str(paths["dir"]))
@@ -174,11 +185,13 @@ def run(
             force=force_email,
         )
 
-    _print_summary(findings, quiet, context, diagnostics, paths["html"], mail)
+    page = notion_mod.maybe_publish(settings.notion, report_state, flagged_symbols)
+
+    _print_summary(findings, quiet, context, diagnostics, paths["html"], mail, page)
 
 
 def _print_summary(
-    findings, quiet, context, diagnostics, html_path: Path, mail=None
+    findings, quiet, context, diagnostics, html_path: Path, mail=None, page=None
 ) -> None:
     table = Table(title=None, box=None, pad_edge=False, header_style="dim")
     table.add_column("Ticker")
@@ -214,6 +227,26 @@ def _print_summary(
             console.print(f"[green]Email:[/] {mail.detail}")
         elif mail.detail not in {"email disabled", "nothing flagged"}:
             console.print(f"[dim]Email:[/] {mail.detail}")
+    if page is not None:
+        if page.published:
+            console.print(f"[green]Notion:[/] {page.detail} {page.url or ''}")
+        elif page.detail not in {"notion disabled", "nothing flagged"}:
+            console.print(f"[dim]Notion:[/] {page.detail}")
+
+
+def _stored_state_path(reports_dir: Path, run: str) -> Path:
+    """Resolve a run id, or 'latest', to its state.json, exiting if there is none."""
+    if run == "latest":
+        candidates = sorted(p for p in reports_dir.glob("*/state.json"))
+        if not candidates:
+            console.print("[red]No stored runs found.[/]")
+            raise typer.Exit(1)
+        return candidates[-1]
+    state_path = reports_dir / run / "state.json"
+    if not state_path.exists():
+        console.print(f"[red]No such run:[/] {run}")
+        raise typer.Exit(1)
+    return state_path
 
 
 @app.command()
@@ -225,22 +258,39 @@ def replay(
     """Re-render a stored run with the current templates. Makes no LLM calls."""
     _configure_logging(verbose)
     settings = load_settings()
-    reports_dir = settings.reports_path
-
-    if run == "latest":
-        candidates = sorted(p for p in reports_dir.glob("*/state.json"))
-        if not candidates:
-            console.print("[red]No stored runs found.[/]")
-            raise typer.Exit(1)
-        state_path = candidates[-1]
-    else:
-        state_path = reports_dir / run / "state.json"
-        if not state_path.exists():
-            console.print(f"[red]No such run:[/] {run}")
-            raise typer.Exit(1)
+    state_path = _stored_state_path(settings.reports_path, run)
 
     paths = publish_mod.rerender(state_path, open_browser=open_browser)
     console.print(f"[bold]Re-rendered:[/] {paths['html']}")
+
+
+@app.command("notion-push")
+def notion_push(
+    run: Annotated[str, typer.Argument(help="Run id, or 'latest'")] = "latest",
+    verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
+) -> None:
+    """Publish a stored run to Notion. Makes no LLM calls.
+
+    This writes to the database: it creates, or replaces the body of, the row for that
+    run's trading day. It ignores notion.enabled, since asking for it is explicit.
+    """
+    _configure_logging(verbose)
+    settings = load_settings()
+    state_path = _stored_state_path(settings.reports_path, run)
+
+    credentials, problem = notion_mod.load_credentials()
+    if credentials is None:
+        console.print(f"[red]Notion is not configured:[/] {problem}. See .env.example.")
+        raise typer.Exit(1)
+
+    result = notion_mod.publish(
+        settings.notion, credentials, publish_mod.load_state(state_path)
+    )
+    if result.published:
+        console.print(f"[green]Published.[/] {result.detail} {result.url or ''}")
+    else:
+        console.print(f"[red]Failed.[/] {result.detail}")
+        raise typer.Exit(1)
 
 
 @app.command("email-test")
@@ -357,6 +407,16 @@ def doctor(verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False) ->
             )
         )
 
+    # Read-only: fetches the database's schema and never writes to it.
+    if not settings.notion.enabled:
+        checks.append(("Notion", True, "disabled"))
+    else:
+        credentials, problem = notion_mod.load_credentials()
+        if credentials is None:
+            checks.append(("Notion", False, problem))
+        else:
+            checks.append(("Notion", *notion_mod.check(credentials)))
+
     checks.append(("Market session", True, "open" if market_is_open() else "closed"))
 
     table = Table(box=None, pad_edge=False, header_style="dim")
@@ -399,6 +459,7 @@ def watch(
                         open_browser=False,
                         email=None,
                         force_email=False,
+                        notion=None,
                         verbose=verbose,
                     )
                 except Exception as exc:

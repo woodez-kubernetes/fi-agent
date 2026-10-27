@@ -60,6 +60,24 @@ email:
   # project root:   FI_AGENT_SMTP_PASSWORD=your16charapppassword
   # .env is gitignored. See deploy-run.md for how to create the App Password.
 
+notion:
+  # Publishes the report to a Notion database: one row per trading day (New York time),
+  # rewritten in place by each later run that day so its URL stays the same.
+  enabled: true
+  # Skip runs where nothing cleared screening.
+  only_when_flagged: true
+  title_prefix: "Watchlist"          # row title becomes "Watchlist · 2026-10-09"
+  # Columns to fill. Any the database lacks (or has with another type) are skipped.
+  date_property: "Report date"
+  model_property: "Model"
+  category_property: "Category"
+  category: "Watchlist"
+  #
+  # Credentials are NOT set here. Put them in .env at the project root:
+  #   NOTION_TOKEN=ntn_...           the integration's internal secret
+  #   NOTION_PARENT_PAGE=https://www.notion.so/...   the database link
+  # The database must be shared with the integration (••• menu → Connections).
+
 paths:
   reports_dir: "reports"
   database: "data/fi_agent.db"
